@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PR #3478 Review: Dynamic Suite Name Resolution (rev 2)</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --border: #30363d;
+    --text: #e6edf3;
+    --text-muted: #8b949e;
+    --accent: #58a6ff;
+    --green: #3fb950;
+    --red: #f85149;
+    --yellow: #d29922;
+    --orange: #db6d28;
+    --cyan: #39d2c0;
+    --purple: #bc8cff;
+    --diff-add-bg: #12261e;
+    --diff-del-bg: #2d1214;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    padding: 2rem;
+    max-width: 960px;
+    margin: 0 auto;
+  }
+  h1 { font-size: 1.6rem; margin-bottom: 0.25rem; }
+  .pr-meta {
+    color: var(--text-muted);
+    font-size: 0.9rem;
+    margin-bottom: 1.5rem;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 1rem;
+  }
+  .pr-meta a { color: var(--accent); text-decoration: none; }
+  .pr-meta a:hover { text-decoration: underline; }
+  .stats { display: flex; gap: 1rem; margin-top: 0.5rem; font-size: 0.85rem; }
+  .stat-add { color: var(--green); }
+  .stat-del { color: var(--red); }
+  .stat-files { color: var(--text-muted); }
+  .revision-note {
+    background: rgba(56, 139, 253, 0.08);
+    border: 1px solid rgba(56, 139, 253, 0.25);
+    border-radius: 6px;
+    padding: 0.6rem 1rem;
+    font-size: 0.85rem;
+    color: var(--accent);
+    margin-bottom: 1.5rem;
+  }
+  h2 {
+    font-size: 1.2rem;
+    margin-top: 2rem;
+    margin-bottom: 0.75rem;
+    color: var(--accent);
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 0.4rem;
+  }
+  section { margin-bottom: 1.5rem; }
+  ul, ol { padding-left: 1.5rem; margin-bottom: 0.75rem; }
+  li { margin-bottom: 0.35rem; }
+  .badge {
+    display: inline-block;
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 0.15rem 0.5rem;
+    border-radius: 10px;
+    vertical-align: middle;
+    margin-right: 0.3rem;
+  }
+  .badge-good { background: #1a4d2e; color: var(--green); }
+  .badge-bug { background: #5c2326; color: var(--red); }
+  .badge-issue { background: #4a2600; color: var(--orange); }
+  .badge-minor { background: #2d2100; color: var(--yellow); }
+  .badge-resolved { background: #1a2744; color: var(--accent); }
+  .finding {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 1rem 1.25rem;
+    margin-bottom: 1rem;
+    border-left: 3px solid var(--border);
+  }
+  .finding-good { border-left-color: var(--green); }
+  .finding-bug { border-left-color: var(--red); }
+  .finding-issue { border-left-color: var(--orange); }
+  .finding-minor { border-left-color: var(--yellow); }
+  .finding-resolved { border-left-color: var(--accent); opacity: 0.7; }
+  .finding-title {
+    font-weight: 600;
+    margin-bottom: 0.4rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .file-ref {
+    font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+    font-size: 0.85rem;
+    color: var(--cyan);
+    background: rgba(57, 210, 192, 0.08);
+    padding: 0.1rem 0.4rem;
+    border-radius: 3px;
+  }
+  code {
+    font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+    font-size: 0.85em;
+    background: rgba(110, 118, 129, 0.15);
+    padding: 0.15rem 0.35rem;
+    border-radius: 3px;
+  }
+  pre {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.75rem 1rem;
+    overflow-x: auto;
+    font-size: 0.82rem;
+    line-height: 1.5;
+    margin: 0.5rem 0 0.75rem;
+  }
+  pre code { background: none; padding: 0; }
+  .diff-add { color: var(--green); background: var(--diff-add-bg); display: block; padding: 0 0.5rem; margin: 0 -1rem; }
+  .diff-del { color: var(--red); background: var(--diff-del-bg); display: block; padding: 0 0.5rem; margin: 0 -1rem; }
+  .diff-ctx { color: var(--text-muted); display: block; padding: 0 0.5rem; margin: 0 -1rem; }
+  .suggestion {
+    background: rgba(56, 139, 253, 0.06);
+    border: 1px dashed rgba(56, 139, 253, 0.3);
+    border-radius: 6px;
+    padding: 0.75rem 1rem;
+    margin: 0.5rem 0;
+    font-size: 0.9rem;
+  }
+  .suggestion::before {
+    content: "Suggestion: ";
+    font-weight: 600;
+    color: var(--accent);
+  }
+  .verdict {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 1.25rem;
+    margin-top: 2rem;
+    text-align: center;
+  }
+  .verdict-label { font-size: 1.1rem; font-weight: 600; margin-bottom: 0.25rem; }
+  .verdict-label.needs-fix { color: var(--orange); }
+  .verdict-detail { color: var(--text-muted); font-size: 0.9rem; }
+  .toc {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 1rem 1.25rem;
+    margin-bottom: 1.5rem;
+  }
+  .toc-title {
+    font-weight: 600;
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+    margin-bottom: 0.5rem;
+  }
+  .toc ul { list-style: none; padding-left: 0; margin: 0; }
+  .toc li { margin-bottom: 0.2rem; }
+  .toc a { color: var(--accent); text-decoration: none; font-size: 0.9rem; }
+  .toc a:hover { text-decoration: underline; }
+  .change-summary {
+    background: rgba(188, 140, 255, 0.06);
+    border: 1px solid rgba(188, 140, 255, 0.2);
+    border-radius: 6px;
+    padding: 0.75rem 1rem;
+    margin-bottom: 1.5rem;
+    font-size: 0.9rem;
+  }
+  .change-summary strong { color: var(--purple); }
+</style>
+</head>
+<body>
+
+<h1>PR #3478: NO-JIRA: check for dynamic suites</h1>
+<div class="pr-meta">
+  <a href="https://github.com/openshift/sippy/pull/3478" target="_blank">github.com/openshift/sippy/pull/3478</a>
+  &mdash; <strong>neisw</strong> (Forrest Babcock) &rarr; <code>dynamic-suites</code> &rarr; <code>main</code>
+  &mdash; derivative of <a href="https://github.com/openshift/sippy/pull/3456" target="_blank">#3456</a>
+  <div class="stats">
+    <span class="stat-add">+173</span>
+    <span class="stat-del">&minus;20</span>
+    <span class="stat-files">3 files &middot; 7 commits</span>
+  </div>
+</div>
+
+<div class="revision-note">
+  Review revision 3 &mdash; updated 2026-05-02 against PR head <code>75c3cd4b</code> (7 commits).
+  The PR was significantly reworked since the first review pass.
+</div>
+
+<nav class="toc">
+  <div class="toc-title">Contents</div>
+  <ul>
+    <li><a href="#changes">Changes Since Rev 1</a></li>
+    <li><a href="#overview">Overview</a></li>
+    <li><a href="#files">Files Changed</a></li>
+    <li><a href="#positives">What's Good</a></li>
+    <li><a href="#issues">Issues &amp; Suggestions</a></li>
+    <li><a href="#resolved">Previously Raised (Resolved)</a></li>
+    <li><a href="#discussion">PR Discussion Notes</a></li>
+    <li><a href="#verdict">Verdict</a></li>
+  </ul>
+</nav>
+
+<!-- ===== CHANGES SINCE REV 1 ===== -->
+<section id="changes">
+  <h2>Changes Since Rev 1</h2>
+  <div class="change-summary">
+    <strong>Major rework since the first review pass:</strong>
+    <ul>
+      <li>Patterns changed from <code>^lp-interop-</code> (single hyphen) to three double-hyphen patterns:
+          <code>^lp-chaos--</code>, <code>^lp-interop--</code>, <code>^lp-ocp-compat--</code>.
+          The <code>--</code> convention distinguishes prefix separators from word separators within the prefix.</li>
+      <li>Patterns declared as pre-compiled <code>[]*regexp.Regexp</code> (no <code>init()</code> needed)</li>
+      <li>New <code>GetSuiteID</code> replaces <code>CheckForDynamicSuite</code> &mdash; now checks <em>both</em>
+          the static list and patterns via <code>isSuiteImportable</code></li>
+      <li><code>findSuite</code> in prow.go drastically simplified &mdash; delegates entirely to <code>db.GetSuiteID</code></li>
+      <li><code>getOrCreateSuite</code> now has a fallback read after <code>FirstOrCreate</code> failure</li>
+      <li>Tests updated for new double-hyphen patterns</li>
+      <li><em>(commit 75c3cd4b)</em> Fixed fallback success path &mdash; fallback read result is now
+          returned instead of silently discarded</li>
+      <li><em>(commit 4fe9c466)</em> Updated comment to reflect proper naming convention</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ===== OVERVIEW ===== -->
+<section id="overview">
+  <h2>Overview</h2>
+  <p>
+    Adds pattern-based dynamic suite creation so that suite names matching configurable regex patterns
+    are auto-created in the database at load time. Three <code>lp-*</code> prefixes are currently configured.
+    Also introduces <code>isSuiteImportable</code> as a gating function that checks both the static
+    <code>testSuites</code> list and the dynamic patterns before any DB interaction.
+    Refactors <code>populateTestSuitesInDB</code> and <code>findSuite</code> to reuse the new helpers.
+  </p>
+</section>
+
+<!-- ===== FILES ===== -->
+<section id="files">
+  <h2>Files Changed</h2>
+  <ul>
+    <li><span class="file-ref">pkg/dataloader/prowloader/prow.go</span> &mdash; <code>findSuite</code>:
+        removed inline DB query, now delegates entirely to <code>db.GetSuiteID</code></li>
+    <li><span class="file-ref">pkg/db/suites.go</span> &mdash; new <code>GetSuiteID</code>,
+        <code>isSuiteImportable</code>, <code>getOrCreateSuite</code>; refactored <code>populateTestSuitesInDB</code>;
+        pattern list with three compiled regexps</li>
+    <li><span class="file-ref">pkg/db/suites_test.go</span> &mdash; unit tests for pattern matching</li>
+  </ul>
+</section>
+
+<!-- ===== POSITIVES ===== -->
+<section id="positives">
+  <h2>What's Good</h2>
+
+  <div class="finding finding-good">
+    <div class="finding-title"><span class="badge badge-good">GOOD</span> Clean layered design</div>
+    <code>GetSuiteID</code> &rarr; <code>isSuiteImportable</code> &rarr; <code>getOrCreateSuite</code>
+    is a clean pipeline. Each function has a single responsibility: gate, check, act.
+  </div>
+
+  <div class="finding finding-good">
+    <div class="finding-title"><span class="badge badge-good">GOOD</span> findSuite drastically simplified</div>
+    The prow loader no longer contains any suite DB logic &mdash; just a cache wrapper around <code>db.GetSuiteID</code>.
+    This is a much better separation of concerns than the original.
+  </div>
+
+  <div class="finding finding-good">
+    <div class="finding-title"><span class="badge badge-good">GOOD</span> isSuiteImportable as pure function</div>
+    This is exactly the right extraction &mdash; a testable, DB-free function that encapsulates all
+    "should we care about this suite?" logic.
+  </div>
+
+  <div class="finding finding-good">
+    <div class="finding-title"><span class="badge badge-good">GOOD</span> Inline regexp.MustCompile</div>
+    Cleaner than the previous <code>init()</code> + separate string slice approach. Compile errors
+    still surface at process start.
+  </div>
+</section>
+
+<!-- ===== ISSUES ===== -->
+<section id="issues">
+  <h2>Issues &amp; Suggestions</h2>
+
+  <!-- Issue 1 -->
+  <div class="finding finding-issue">
+    <div class="finding-title">
+      <span class="badge badge-issue">ISSUE</span>
+      Behavioral change: findSuite now rejects unknown suites that exist in DB
+    </div>
+    <p><span class="file-ref">pkg/dataloader/prowloader/prow.go:1183-1186</span></p>
+    <p>
+      The old <code>findSuite</code> looked up any suite by name in the DB and returned its ID if found.
+      The new code calls <code>db.GetSuiteID</code>, which first runs <code>isSuiteImportable</code> &mdash;
+      if a suite exists in the database but is <em>not</em> in the static list or pattern list,
+      <code>GetSuiteID</code> returns <code>nil</code> without ever querying the DB.
+    </p>
+    <p>
+      This means tests from suites that were previously imported (before they were removed from the
+      allowlist, or added manually) will silently stop getting a suite ID assigned. This may be
+      intentional, but it's a significant behavioral change that should be called out explicitly.
+    </p>
+  </div>
+
+  <!-- Issue 3 -->
+  <div class="finding finding-issue">
+    <div class="finding-title">
+      <span class="badge badge-issue">ISSUE</span>
+      Misleading log message: "retrieved" vs "created"
+    </div>
+    <p><span class="file-ref">pkg/db/suites.go:137-139</span></p>
+    <p>
+      <code>FirstOrCreate</code> sets <code>RowsAffected</code> to 1 when it <strong>creates</strong> a new record,
+      and 0 when it finds an existing one. The log message says <code>"retrieved test suite"</code> but it
+      actually fires only on creation. This is the opposite of what the message says.
+    </p>
+    <div class="suggestion">
+      Change the log message to <code>"created new test suite"</code> (matching the old behavior)
+      or remove it since <code>populateTestSuitesInDB</code> doesn't need per-suite logging.
+    </div>
+  </div>
+
+  <!-- Issue 4 -->
+  <div class="finding finding-minor">
+    <div class="finding-title">
+      <span class="badge badge-minor">MINOR</span>
+      Test still duplicates matching logic instead of calling isSuiteImportable
+    </div>
+    <p><span class="file-ref">pkg/db/suites_test.go:95-101</span></p>
+    <p>
+      The test re-implements matching with its own <code>!= "" &amp;&amp; re.MatchString</code> loop.
+      Now that <code>isSuiteImportable</code> exists as a pure, DB-free function, the test should call
+      it directly. This would also catch suites that match via the static list, making the test more
+      accurate.
+    </p>
+    <div class="suggestion">
+      Replace the inline loop with a call to <code>isSuiteImportable(tt.suiteName)</code>.
+      Note that the <code>"openshift-tests"</code> test case would then need
+      <code>shouldMatch: true</code> since it's in the static list.
+    </div>
+  </div>
+
+  <!-- Issue 5 -->
+  <div class="finding finding-minor">
+    <div class="finding-title">
+      <span class="badge badge-minor">MINOR</span>
+      Test case name contradicts its expected result
+    </div>
+    <p><span class="file-ref">pkg/db/suites_test.go:79-83</span></p>
+    <p>
+      The test case is named <code>"no pattern match - only prefix no suffix"</code> with input
+      <code>"lp-interop--"</code> and <code>shouldMatch: true</code>. The name says "no pattern match"
+      but the expectation is that it <em>does</em> match. Rename to something like
+      <code>"matches pattern even with empty suffix"</code>.
+    </p>
+  </div>
+
+  <!-- Issue 5 -->
+  <div class="finding finding-minor">
+    <div class="finding-title">
+      <span class="badge badge-minor">MINOR</span>
+      FirstOrCreate race condition (carried from rev 1)
+    </div>
+    <p><span class="file-ref">pkg/db/suites.go:117</span></p>
+    <p>
+      <code>FirstOrCreate</code> without a unique constraint on <code>suites.name</code> could
+      insert duplicates under concurrent access from multiple ProwLoader instances. The old code
+      used <code>clause.OnConflict{UpdateAll: true}</code>. The fallback read (now fixed in
+      <code>75c3cd4b</code>) mitigates this partially.
+    </p>
+    <p>
+      <strong>Author's position (from PR discussion):</strong> The prow loader runs on a cron
+      schedule. New suites are rare, and a transient failure will be picked up on the next run.
+      This is an acceptable trade-off for code simplicity.
+    </p>
+    <div class="suggestion">
+      Acknowledged as acceptable. If you want belt-and-suspenders, a unique index on
+      <code>suites.name</code> would make the fallback path unnecessary entirely.
+    </div>
+  </div>
+</section>
+
+<!-- ===== RESOLVED ===== -->
+<section id="resolved">
+  <h2>Previously Raised (Resolved)</h2>
+
+  <div class="finding finding-resolved">
+    <div class="finding-title">
+      <span class="badge badge-resolved">RESOLVED</span>
+      getOrCreateSuite fallback read was dead code
+    </div>
+    Rev 2 flagged that the fallback <code>First</code> read always returned <code>nil</code>
+    even on success. Fixed in commit <code>75c3cd4b</code> &mdash; fallback now falls through
+    to return the suite ID.
+  </div>
+
+  <div class="finding finding-resolved">
+    <div class="finding-title">
+      <span class="badge badge-resolved">RESOLVED</span>
+      init() pattern compilation
+    </div>
+    Rev 1 noted the <code>init()</code> + string slice approach. Now uses inline
+    <code>regexp.MustCompile</code> &mdash; cleaner.
+  </div>
+
+  <div class="finding finding-resolved">
+    <div class="finding-title">
+      <span class="badge badge-resolved">RESOLVED</span>
+      Test should call production code
+    </div>
+    <code>isSuiteImportable</code> was extracted as a pure function, which is the right target.
+    The test doesn't call it yet (see MINOR above), but the production code is structured correctly.
+  </div>
+
+  <div class="finding finding-resolved">
+    <div class="finding-title">
+      <span class="badge badge-resolved">RESOLVED</span>
+      Misleading test reason for "missing hyphen"
+    </div>
+    Pattern reasons updated to match new double-hyphen patterns.
+  </div>
+</section>
+
+<!-- ===== DISCUSSION ===== -->
+<section id="discussion">
+  <h2>PR Discussion Notes</h2>
+  <p>Key points from the review thread worth being aware of:</p>
+  <ul>
+    <li><strong>@oharan2</strong> suggested <code>populateTestSuitesInDB</code> should call
+        <code>GetSuiteID</code> (the wrapper) instead of <code>getOrCreateSuite</code> directly.
+        <strong>@etirta</strong> disagreed: <code>populateTestSuitesInDB</code> is only for
+        pre-seeding with concrete names, so <code>isSuiteImportable</code> checks are unnecessary there.</li>
+    <li><strong>@etirta</strong> explained the <code>--</code> double-hyphen convention:
+        it distinguishes the prefix separator from word separators within the prefix itself
+        (e.g., <code>lp-ocp-compat</code> has hyphens in the prefix, <code>--</code> marks where
+        the prefix ends).</li>
+    <li><strong>@neisw</strong> on race conditions: the loader runs on a cron schedule, new suites
+        are rare, and the next cron invocation retries naturally. Complexity not warranted.</li>
+    <li><strong>@etirta</strong> left a nit about the naming convention comment accuracy
+        (commit <code>4fe9c466</code> addressed this).</li>
+  </ul>
+</section>
+
+<!-- ===== VERDICT ===== -->
+<section id="verdict">
+  <div class="verdict">
+    <div class="verdict-label" style="color: var(--green);">Approve with comments</div>
+    <div class="verdict-detail">
+      The rev 2 blocker (dead-code fallback) is fixed. Remaining items: confirm the behavioral
+      change (unknown suites now rejected) is intentional, fix the misleading <code>"retrieved"</code>
+      log message, and clean up the test (call <code>isSuiteImportable</code> directly, fix the
+      contradictory test case name). None are blocking.
+    </div>
+  </div>
+</section>
+
+</body>
+</html>
