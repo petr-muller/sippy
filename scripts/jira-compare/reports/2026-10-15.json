@@ -1,0 +1,16 @@
+{
+  "pat_components": 351,
+  "sa_components": 351,
+  "pat_incidents": 284,
+  "sa_incidents": 284,
+  "detail_keys_checked": 291,
+  "database_unresolved_keys": 11,
+  "differences": {
+    "components": [],
+    "detail_access": [],
+    "incident_search": [],
+    "issue_details": []
+  },
+  "pat_detail_failures": {},
+  "sa_detail_failures": {}
+}
